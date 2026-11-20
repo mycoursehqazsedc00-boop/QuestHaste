@@ -1,78 +1,68 @@
-# QuestHaste
+# QuestHaste (Patched for WoW 1.12 / Turtle WoW)
 
-## Intro:
+> Fast quest accept, turn-in, and hands-off or hold-key auto-repeat for repeatable quests, with per-quest reward item selection.
 
-QuestHaste is a small Addon for World of Warcraft (vanilla 1.12), it allows fast turn in of quests, especially useful for repeatable quests (e.g. Alterac Valley quests). It can now also fully auto-repeat a quest hands-off.
+## Client Mods Used
+| Mod | Purpose in this addon | Required? |
+|---|---|---|
+| ClassicAPI | Detects `CLASSIC_API_VERSION` at `PLAYER_LOGIN` to select the 7-field/6-field `GetGossipAvailableQuests`/`GetGossipActiveQuests` signatures and `SetColorTexture` when present, falling back to stock 1.12 APIs when absent. | Optional |
 
-## Usage:
+## Features
+- **Quest Saving & Auto-Repeat:** Save quests for auto-accept/auto-complete (`Ctrl`), or flag them for full auto-repeat (`Ctrl+Shift`, `Shift+Click` in gossip/greeting lists, or `/qhaste repeat`).
+- **Hold-Key + Click NPC Mode (`/qhaste hold`):** Optional mode where repeat-flagged (and saved) quests only auto-finish/auto-repeat while you hold a chosen modifier key (`shift`, `ctrl`, or `alt`) when clicking the NPC, using a short sequence latch so the full dialog chain completes smoothly.
+- **Saved Reward Item Selection:** On multi-choice `QUEST_COMPLETE` screens, **Right-Click** any reward item (or use `/qhaste reward <index>`) to mark it with a gold `[AUTO]` badge. Future auto-repeats and Hold-Key turn-ins automatically pick the matching item by item ID / name and refuse to auto-complete if the saved item is not found.
+- **Frame-Deferred Action Queue (`/qhaste delay`):** Defers `SelectGossip*`, `AcceptQuest`, `CompleteQuest`, and `GetQuestReward` by `0.05s` (configurable, `0` for instant) with duplicate-event suppression and table reuse to prevent FPS hitches during rapid quest turn-ins.
+- **Debug Tracing (`/qhaste trace`):** Timestamped chat trace logging for diagnosing event flow, hold-key state, reward matching, and scheduled actions.
 
-### Quest (active and available) opening/progress modifiers
+## What Was Added / Improved
+- **Added:** Hold-Key + Click NPC auto-finish mode (`/qhaste hold [on|off|shift|ctrl|alt]`) with sequence latching and modifier-conflict protection.
+- **Added:** Per-quest reward item marking (`Right-Click` on `QuestRewardItem1..10` with `[AUTO]` badge and tooltip hint, plus `/qhaste reward [index|clear]`), matched by item ID and name across `QUEST_COMPLETE` and `/qhaste complete`.
+- **Added:** Frame-deferred `OnUpdate` action scheduler (`/qhaste delay <sec>`) and `QUEST_COMPLETE` duplicate-event guard to mitigate sudden FPS drops on auto-completion.
+- **Added:** `/qhaste trace` debug logging and `PLAYER_LOGIN` ClassicAPI feature detection.
+- **Improved:** Replaced `32 × N` `strfind` scans in `menuHandler` with O(1) direct table lookup first, reused gossip/greeting arrays instead of allocating per event, and converted code to Lua 5.0-safe syntax (`table.getn`, `arg1`, `this`).
+- **Fixed:** Removed the incomplete-active-quest loop in `menuHandler` that previously re-opened incomplete repeat-flagged quests on every `GOSSIP_SHOW` / `QUEST_GREETING`.
 
-| Modifier          | Action
-| :---:             | ---
-| Control           | auto complete/accept and save
-| Control+Shift     | auto complete/accept, save, **and auto-repeat** — keeps accepting/turning the quest back in with zero further key presses, until cleared with Alt or `/qhaste repeat`
-| Alt               | forget (clears save AND repeat)
-| Shift             | complete/accept if not saved, hold if saved
-| None              | complete/accept if saved
+## Usage
 
-### Gossip / greeting list modifiers (multi-quest NPC popups)
+### Quest Opening / Progress Modifiers
+| Modifier | Action |
+| :---: | --- |
+| Control | Auto complete/accept and save |
+| Control+Shift | Auto complete/accept, save, and **auto-repeat** |
+| Alt | Forget quest (clears save, repeat, and saved reward) |
+| Shift | Complete/accept if not saved, hold if saved |
+| None | Complete/accept if saved (or auto-repeat if Hold-Key mode is off) |
 
-| Modifier                        | Action
-| :---:                           | ---
-| Shift+Click a quest's name      | toggle auto-repeat for that quest
-| Alt+Click a saved quest's name  | forget it (save + repeat)
-| Shift (held, not clicking)      | auto complete/accept a quest in the list<br>(priority: repeat-flagged, completed, available saved, active saved, available, active)
+*(When Hold-Key mode is enabled, holding the configured `holdKey` prioritizes auto-finishing marked quests instead of triggering its edit/forget action.)*
 
-Repeat-flagged quests get a gold highlight in these lists; merely-saved quests get a green-yellow highlight.
+### Gossip / Greeting List Modifiers
+| Modifier | Action |
+| :---: | --- |
+| Shift+Click quest name | Toggle auto-repeat for that quest |
+| Alt+Click saved quest name | Forget quest (save + repeat + reward) |
+| Shift (held) | Auto complete/accept a quest in the list |
 
-### Chat commands (/qhaste, /questhaste)
-| Command   | Action
-| :---:     |   ---
-| usage     | display usage instructions
-| add       | saves current quest
-| repeat    | toggles auto-repeat on the current quest
-| list      | list all saved quests, with accept/complete/repeat state
-| pause     | disable QuestHaste
-| resume    | activate QuestHaste
-| complete  | complete/accept current quest
-| reset     | clears all saved quests
+### Reward Item Selection (`QUEST_COMPLETE`)
+| Action | Effect |
+| :---: | --- |
+| Right-Click reward item | Mark/unmark that item for future auto-repeats (`[AUTO]` badge) |
 
-### A note on auto-repeat
+### Chat Commands (`/qhaste`, `/questhaste`)
+| Command | Action |
+| --- | --- |
+| `/qhaste usage` | Display usage instructions |
+| `/qhaste add` | Save current quest |
+| `/qhaste repeat` | Toggle auto-repeat on current quest |
+| `/qhaste reward [N\|clear]` | Mark reward choice `N` or clear saved reward for current quest |
+| `/qhaste hold [on\|off\|shift\|ctrl\|alt]` | Toggle Hold-Key NPC mode or set the hold modifier key |
+| `/qhaste delay <sec>` | Set action defer delay in seconds (`0`–`2`, default `0.05`) |
+| `/qhaste trace` | Toggle timestamped debug trace logging |
+| `/qhaste list` | List all saved quests with accept/complete/repeat/reward state |
+| `/qhaste pause` / `resume` | Pause or resume QuestHaste |
+| `/qhaste complete` | Complete/accept current quest |
+| `/qhaste reset` | Clear all saved quests |
 
-Auto-repeat automates the accept → hand-in → get-reward cycle for a flagged
-quest completely, with no modifier keys needed once it's on. It relies on the
-game re-showing the quest dialog for that NPC (which happens automatically
-for many repeatable quest hubs); for NPCs that require a fresh click to
-re-open dialog each time, you'll still need that one click, but everything
-after it — accept, turn in, choose the reward if there's no choice — happens
-on its own. There's no way for an addon to script "click on this NPC" itself;
-that part is a client (not scriptable) action.
-
-## Change Log:
-
-### Version 0.2
-* **New:** auto-repeat — flag a quest (Control+Shift, Shift+Click its name
-  in a gossip/greeting list, or `/qhaste repeat`) and QuestHaste will keep
-  accepting and turning it back in on its own until you clear the flag.
-* **Fix:** `QUEST_GREETING` (the simple multi-quest popup, as opposed to
-  full gossip menus) was silently broken — `table.insert` was being called
-  with the multiple return values of `GetActiveTitle`/`GetAvailableTitle`
-  spread across several arguments, which errors on stock `table.insert`.
-  Even set aside the error, the list held bare strings instead of records,
-  so none of the saved/priority logic ever actually applied to these NPCs.
-* **Fix:** `contained()` compared a whole quest record table to a plain
-  title string and was never true, so Alt-clicking a saved *available*
-  quest in a gossip list silently failed to forget it.
-* **Fix:** `QuestHaste_RemoveAutoAccept` called a function that doesn't
-  exist (`QuestHaste_IsComplete`), throwing a Lua error on every Alt-click
-  removal of a quest that also had auto-complete saved.
-* **Fix:** quest-title matching against the saved list used a Lua pattern
-  match, which could mis-match or error on titles containing pattern
-  characters (`-`, `(`, `%`, etc). Now uses a plain-text match.
-* Removed a dead/unused quest-log scan in the gossip priority logic.
-* Bumped `## Interface` to 11200 to match the 1.12 client mods
-  (ClassicAPI/SuperWoW/nampower/UnitXP_SP3) this project targets.
-
-### Version 0.1
-* Ported to Classic
+## Credits & License
+- Original addon: **WobLight** (QuestHaste)
+- Patch / improvements: Hold-Key NPC mode, saved reward item selection, FPS/frame-deferral optimization, Lua 5.0 compatibility, and `/qhaste trace`
+- License: Same as original addon unless stated otherwise.
