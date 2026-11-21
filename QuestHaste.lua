@@ -196,15 +196,22 @@ local function WipeArray(t)
 end
 
 -- Chops flat return lists from GetGossipAvailableQuests / GetGossipActiveQuests
--- into reusable record tables.
-local function FillRecords(dest, fields, argList)
+-- into reusable record tables, using expectedCount so nil fields never truncate.
+local function PackArgs(...)
+    return arg
+end
+
+local function FillRecords(dest, fields, argList, expectedCount)
     WipeArray(dest)
-    local total = table.getn(argList)
     local numFields = table.getn(fields)
-    if numFields == 0 or total == 0 then
+    if numFields == 0 then
         return dest
     end
-    local count = math.floor(total / numFields)
+    local count = expectedCount
+    if not count then
+        local total = argList.n or (table.maxn and table.maxn(argList)) or table.getn(argList)
+        count = math.floor(total / numFields)
+    end
     for i = 1, count do
         local rec = {}
         for k = 1, numFields do
@@ -565,6 +572,11 @@ function QuestHaste_EventHandler.GOSSIP_SHOW()
     if QuestHaste and QuestHaste.holdMode and not IsHoldKeyDown() then
         ClearHoldLatch()
     end
+    local numAvail = GetNumGossipAvailableQuests and GetNumGossipAvailableQuests() or nil
+    local numAct = GetNumGossipActiveQuests and GetNumGossipActiveQuests() or nil
+    local availRaw = PackArgs(GetGossipAvailableQuests())
+    local actRaw = PackArgs(GetGossipActiveQuests())
+
     local availFields = HAS_CAPI
         and {"title", "level", "trivial", "frequency", "repeatable", "legendary", "ignored"}
         or {"title", "level", "trivial", "repeatable"}
@@ -572,8 +584,25 @@ function QuestHaste_EventHandler.GOSSIP_SHOW()
         and {"title", "level", "trivial", "completed", "legendary", "ignored"}
         or {"title", "level", "trivial", "completed"}
 
-    local available = FillRecords(availableCache, availFields, {GetGossipAvailableQuests()})
-    local active = FillRecords(activeCache, activeFields, {GetGossipActiveQuests()})
+    if numAvail and numAvail > 0 and availRaw.n and availRaw.n > 0 then
+        local stride = math.floor(availRaw.n / numAvail)
+        if stride == 4 then
+            availFields = {"title", "level", "trivial", "repeatable"}
+        elseif stride == 7 then
+            availFields = {"title", "level", "trivial", "frequency", "repeatable", "legendary", "ignored"}
+        end
+    end
+    if numAct and numAct > 0 and actRaw.n and actRaw.n > 0 then
+        local stride = math.floor(actRaw.n / numAct)
+        if stride == 4 then
+            activeFields = {"title", "level", "trivial", "completed"}
+        elseif stride == 6 then
+            activeFields = {"title", "level", "trivial", "completed", "legendary", "ignored"}
+        end
+    end
+
+    local available = FillRecords(availableCache, availFields, availRaw, numAvail)
+    local active = FillRecords(activeCache, activeFields, actRaw, numAct)
     TraceLog("GOSSIP_SHOW (avail=" .. table.getn(available) .. ", act=" .. table.getn(active) .. ", holdMode=" .. tostring(QuestHaste.holdMode) .. ", holdActive=" .. tostring(IsHoldActive()) .. ")")
     menuHandler(available, active, "GossipTitleButton", SelectGossipAvailableQuest, SelectGossipActiveQuest)
 end
