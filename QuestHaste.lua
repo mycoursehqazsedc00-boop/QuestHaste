@@ -216,12 +216,43 @@ local function FillRecords(dest, fields, argList)
 end
 
 local function contained(t, title)
-    for _, v in pairs(t) do
+    for _, v in ipairs(t) do
         if v.title == title then
             return true
         end
     end
     return false
+end
+
+local function StripQuestFormatting(text)
+    if not text then return nil end
+    local s = string.gsub(text, "|c%x%x%x%x%x%x%x%x", "")
+    s = string.gsub(s, "|r", "")
+    s = string.gsub(s, "^%s*%[%d+[%+%*]?%]%s*", "")
+    s = string.gsub(s, "^%s+", "")
+    s = string.gsub(s, "%s+$", "")
+    return s
+end
+
+local function ResolveButtonQuestTitle(btn, available, active)
+    if not btn then return nil end
+    local id = btn:GetID()
+    if btn.type == "Available" and id and available[id] and available[id].title then
+        return available[id].title
+    elseif btn.type == "Active" and id and active[id] and active[id].title then
+        return active[id].title
+    end
+    local raw = btn:GetText()
+    local clean = StripQuestFormatting(raw)
+    if clean then
+        for _, v in ipairs(available) do
+            if v.title == clean then return v.title end
+        end
+        for _, v in ipairs(active) do
+            if v.title == clean then return v.title end
+        end
+    end
+    return clean or raw
 end
 
 local function ShouldAutoRepeatRun()
@@ -250,7 +281,7 @@ local function menuHandler(available, active, name, accept, complete)
                 SetupBackground(f.QHaste.background)
                 local btn = f
                 local function OnClick()
-                    local title = btn:GetText()
+                    local title = ResolveButtonQuestTitle(btn, available, active)
                     if IsAltKeyDown() and title and QuestHaste.autolist[title] then
                         if contained(available, title) then
                             QuestHaste_RemoveAutoAccept(title)
@@ -260,8 +291,9 @@ local function menuHandler(available, active, name, accept, complete)
                         QuestHaste_RemoveAutoRepeat(title)
                         QuestHaste_ClearSavedReward(title)
                         btn.QHaste.background:Hide()
-                    elseif IsShiftKeyDown() and title and not (QuestHaste.holdMode and QuestHaste.holdKey == "shift") then
+                    elseif IsShiftKeyDown() and title then
                         -- Shift+Click a quest's name: toggle auto-repeat
+                        TraceLog("Toggle repeat from list: " .. tostring(title))
                         if QuestHaste_IsAutoRepeat(title) then
                             QuestHaste_RemoveAutoRepeat(title)
                         else
@@ -309,7 +341,7 @@ local function menuHandler(available, active, name, accept, complete)
 
     -- Auto-repeat pass (always on if holdMode=false, or gated by IsHoldActive() if holdMode=true)
     if ShouldAutoRepeatRun() then
-        for k, v in pairs(active) do
+        for k, v in ipairs(active) do
             if v.completed and QuestHaste_IsAutoRepeat(v.title) then
                 QuestHaste.currentQuest = v.title
                 local idx = k
@@ -317,7 +349,7 @@ local function menuHandler(available, active, name, accept, complete)
                 return
             end
         end
-        for k, v in pairs(available) do
+        for k, v in ipairs(available) do
             if QuestHaste_IsAutoRepeat(v.title) then
                 QuestHaste.currentQuest = v.title
                 local idx = k
@@ -327,7 +359,7 @@ local function menuHandler(available, active, name, accept, complete)
         end
         -- If holdMode is active and user held the key, also finish saved (non-repeat) completed/available quests
         if QuestHaste.holdMode then
-            for k, v in pairs(active) do
+            for k, v in ipairs(active) do
                 if v.completed and QuestHaste_IsAutoComplete(v.title) then
                     QuestHaste.currentQuest = v.title
                     local idx = k
@@ -335,7 +367,7 @@ local function menuHandler(available, active, name, accept, complete)
                     return
                 end
             end
-            for k, v in pairs(available) do
+            for k, v in ipairs(available) do
                 if QuestHaste_IsAutoAccept(v.title) then
                     QuestHaste.currentQuest = v.title
                     local idx = k
@@ -346,9 +378,9 @@ local function menuHandler(available, active, name, accept, complete)
         end
     end
 
-    -- Legacy Shift-held list pass (when not in holdMode with holdKey=="shift")
-    if IsShiftKeyDown() and not (QuestHaste.holdMode and QuestHaste.holdKey == "shift") then
-        for k, v in pairs(active) do
+    -- Legacy Shift-held list pass (when holdMode=false)
+    if IsShiftKeyDown() and not QuestHaste.holdMode then
+        for k, v in ipairs(active) do
             if v.completed then
                 QuestHaste.currentQuest = v.title
                 local idx = k
@@ -357,7 +389,7 @@ local function menuHandler(available, active, name, accept, complete)
             end
         end
 
-        for k, v in pairs(available) do
+        for k, v in ipairs(available) do
             if QuestHaste_IsAutoAccept(v.title) or (v.repeatable and QuestHaste_IsAutoComplete(v.title)) then
                 QuestHaste.currentQuest = v.title
                 local idx = k
@@ -366,7 +398,7 @@ local function menuHandler(available, active, name, accept, complete)
             end
         end
 
-        for k, v in pairs(active) do
+        for k, v in ipairs(active) do
             if QuestHaste_IsAutoComplete(v.title) then
                 QuestHaste.currentQuest = v.title
                 local idx = k
@@ -496,7 +528,6 @@ local function FindSavedRewardChoice(title)
 end
 
 function QuestHaste_EventHandler.GOSSIP_SHOW()
-    TraceLog("GOSSIP_SHOW (holdMode=" .. tostring(QuestHaste.holdMode) .. ", holdActive=" .. tostring(IsHoldActive()) .. ")")
     local availFields = HAS_CAPI
         and {"title", "level", "trivial", "frequency", "repeatable", "legendary", "ignored"}
         or {"title", "level", "trivial", "repeatable"}
@@ -506,11 +537,11 @@ function QuestHaste_EventHandler.GOSSIP_SHOW()
 
     local available = FillRecords(availableCache, availFields, {GetGossipAvailableQuests()})
     local active = FillRecords(activeCache, activeFields, {GetGossipActiveQuests()})
+    TraceLog("GOSSIP_SHOW (avail=" .. table.getn(available) .. ", act=" .. table.getn(active) .. ", holdMode=" .. tostring(QuestHaste.holdMode) .. ", holdActive=" .. tostring(IsHoldActive()) .. ")")
     menuHandler(available, active, "GossipTitleButton", SelectGossipAvailableQuest, SelectGossipActiveQuest)
 end
 
 function QuestHaste_EventHandler.QUEST_GREETING()
-    TraceLog("QUEST_GREETING (holdMode=" .. tostring(QuestHaste.holdMode) .. ", holdActive=" .. tostring(IsHoldActive()) .. ")")
     WipeArray(availableCache)
     WipeArray(activeCache)
     for k = 1, GetNumActiveQuests() do
@@ -521,6 +552,7 @@ function QuestHaste_EventHandler.QUEST_GREETING()
         local title, level, isTrivial, isRepeatable = GetAvailableTitle(k)
         availableCache[k] = {title = title, level = level, trivial = isTrivial, repeatable = isRepeatable}
     end
+    TraceLog("QUEST_GREETING (avail=" .. table.getn(availableCache) .. ", act=" .. table.getn(activeCache) .. ", holdMode=" .. tostring(QuestHaste.holdMode) .. ", holdActive=" .. tostring(IsHoldActive()) .. ")")
     menuHandler(availableCache, activeCache, "QuestTitleButton", SelectAvailableQuest, SelectActiveQuest)
 end
 

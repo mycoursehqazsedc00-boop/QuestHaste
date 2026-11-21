@@ -8,7 +8,10 @@
 | ClassicAPI | Detects `CLASSIC_API_VERSION` at `PLAYER_LOGIN` to select the 7-field/6-field `GetGossipAvailableQuests`/`GetGossipActiveQuests` signatures and `SetColorTexture` when present, falling back to stock 1.12 APIs when absent. | Optional |
 
 ## Features
-- **Quest Saving & Auto-Repeat:** Save quests for auto-accept/auto-complete (`Ctrl`), or flag them for full auto-repeat (`Ctrl+Shift`, `Shift+Click` in gossip/greeting lists, or `/qhaste repeat`).
+- **Quest Saving & Auto-Repeat:** Save quests for auto-accept/auto-complete (`Ctrl`), or flag them for full auto-repeat (`Ctrl+Shift`, `Shift+Click` in gossip/greeting lists, or `/qhaste repeat`). When multiple repeat quests are present on the same NPC, execution order is top-to-bottom (`ipairs`):
+  1. Completed active repeat-flagged quests (`1..N`)
+  2. Available repeat-flagged quests (`1..N`)
+  3. *(In Hold-Key mode)* Completed active saved quests (`1..N`), then available saved quests (`1..N`)
 - **Hold-Key + Click NPC Mode (`/qhaste hold`):** Optional mode where repeat-flagged (and saved) quests only auto-finish/auto-repeat while you hold a chosen modifier key (`shift`, `ctrl`, or `alt`) when clicking the NPC, using a short sequence latch so the full dialog chain completes smoothly.
 - **Saved Reward Item Selection:** On multi-choice `QUEST_COMPLETE` screens, **Right-Click** any reward item (or use `/qhaste reward <index>`) to mark it with a gold `[AUTO]` badge. Future auto-repeats and Hold-Key turn-ins automatically pick the matching item by item ID / name and refuse to auto-complete if the saved item is not found.
 - **Frame-Deferred Action Queue (`/qhaste delay`):** Defers `SelectGossip*`, `AcceptQuest`, `CompleteQuest`, and `GetQuestReward` by `0.05s` (configurable, `0` for instant) with duplicate-event suppression and table reuse to prevent FPS hitches during rapid quest turn-ins.
