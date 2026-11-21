@@ -73,7 +73,7 @@ local function EnsureDefaults()
         QuestHaste.dataVersion = "1.0.0"
     end
     if QuestHaste.holdMode == nil then
-        QuestHaste.holdMode = false
+        QuestHaste.holdMode = true
     end
     if QuestHaste.holdKey == nil then
         QuestHaste.holdKey = "shift"
@@ -429,23 +429,29 @@ local function RefreshRewardHighlights()
 
     for i = 1, 10 do
         local btn = getglobal("QuestRewardItem" .. i)
-        if btn and btn.QHasteBadge then
-            if i <= numChoices and (savedName or savedId) then
+        if btn and btn.QHasteFrame then
+            local isChoice = (btn.type == nil or btn.type == "choice")
+            if isChoice and i <= numChoices and (savedName or savedId) then
                 local itemName = GetQuestItemInfo("choice", i)
                 local itemLink = GetQuestItemLink("choice", i)
                 local itemId = ExtractItemId(itemLink)
                 if (savedId and itemId and itemId == savedId) or (savedName and itemName and itemName == savedName) then
-                    btn.QHasteBadge:Show()
-                    btn.QHasteLabel:Show()
+                    btn.QHasteFrame:Show()
                 else
-                    btn.QHasteBadge:Hide()
-                    btn.QHasteLabel:Hide()
+                    btn.QHasteFrame:Hide()
                 end
             else
-                btn.QHasteBadge:Hide()
-                btn.QHasteLabel:Hide()
+                btn.QHasteFrame:Hide()
             end
         end
+    end
+end
+
+local function SetSolidColor(tex, r, g, b, a)
+    if tex.SetColorTexture then
+        tex:SetColorTexture(r, g, b, a)
+    else
+        tex:SetTexture(r, g, b, a)
     end
 end
 
@@ -456,46 +462,74 @@ local function SetupRewardItemHooks()
             btn.QHasteHooked = true
             btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
-            local badge = btn:CreateTexture(nil, "OVERLAY")
-            badge:SetAllPoints()
-            if badge.SetColorTexture then
-                badge:SetColorTexture(1, 0.82, 0, 0.28)
-            else
-                badge:SetTexture(1, 0.82, 0, 0.28)
-            end
-            badge:Hide()
-            btn.QHasteBadge = badge
+            local overlay = CreateFrame("Frame", nil, btn)
+            overlay:SetAllPoints(btn)
+            overlay:SetFrameLevel(btn:GetFrameLevel() + 5)
 
-            local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            label:SetPoint("TOPRIGHT", btn, "TOPRIGHT", -2, -2)
+            local bg = overlay:CreateTexture(nil, "OVERLAY")
+            bg:SetAllPoints(overlay)
+            SetSolidColor(bg, 1, 0.82, 0, 0.25)
+
+            local top = overlay:CreateTexture(nil, "OVERLAY")
+            top:SetPoint("TOPLEFT", overlay, "TOPLEFT", 0, 0)
+            top:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", 0, 0)
+            top:SetHeight(2)
+            SetSolidColor(top, 1, 0.82, 0, 1)
+
+            local bottom = overlay:CreateTexture(nil, "OVERLAY")
+            bottom:SetPoint("BOTTOMLEFT", overlay, "BOTTOMLEFT", 0, 0)
+            bottom:SetPoint("BOTTOMRIGHT", overlay, "BOTTOMRIGHT", 0, 0)
+            bottom:SetHeight(2)
+            SetSolidColor(bottom, 1, 0.82, 0, 1)
+
+            local left = overlay:CreateTexture(nil, "OVERLAY")
+            left:SetPoint("TOPLEFT", overlay, "TOPLEFT", 0, 0)
+            left:SetPoint("BOTTOMLEFT", overlay, "BOTTOMLEFT", 0, 0)
+            left:SetWidth(2)
+            SetSolidColor(left, 1, 0.82, 0, 1)
+
+            local right = overlay:CreateTexture(nil, "OVERLAY")
+            right:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", 0, 0)
+            right:SetPoint("BOTTOMRIGHT", overlay, "BOTTOMRIGHT", 0, 0)
+            right:SetWidth(2)
+            SetSolidColor(right, 1, 0.82, 0, 1)
+
+            local label = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            label:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", -3, -3)
             label:SetText("|cffffd700[AUTO]|r")
-            label:Hide()
-            btn.QHasteLabel = label
+
+            overlay:Hide()
+            btn.QHasteFrame = overlay
 
             local oldOnClick = btn:GetScript("OnClick")
             local slotIndex = i
-            btn:SetScript("OnClick", function()
-                if arg1 == "RightButton" then
+            btn:SetScript("OnClick", function(self, button)
+                local clickBtn = button or arg1
+                if clickBtn == "RightButton" then
+                    if btn.type and btn.type ~= "choice" then
+                        return
+                    end
                     local title = GetTitleText()
                     if title and title ~= "" then
-                        local idx = this:GetID()
+                        local idx = btn:GetID()
                         if not idx or idx == 0 then idx = slotIndex end
+                        TraceLog("Right-Click reward item #" .. tostring(idx) .. " for " .. tostring(title))
                         QuestHaste_ToggleSavedReward(title, idx)
                         RefreshRewardHighlights()
                     end
                     return
                 end
                 if oldOnClick then
-                    oldOnClick()
+                    oldOnClick(self, button)
                 end
             end)
 
             local oldOnEnter = btn:GetScript("OnEnter")
-            btn:SetScript("OnEnter", function()
+            btn:SetScript("OnEnter", function(self, motion)
                 if oldOnEnter then
-                    oldOnEnter()
+                    oldOnEnter(self, motion)
                 end
-                if GameTooltip and GameTooltip:IsOwned(this) then
+                if (btn.type == nil or btn.type == "choice") and GameTooltip and GameTooltip:IsOwned(btn) then
                     GameTooltip:AddLine("QuestHaste: Right-Click to mark for auto-repeat", 1, 0.82, 0)
                     GameTooltip:Show()
                 end
@@ -528,6 +562,9 @@ local function FindSavedRewardChoice(title)
 end
 
 function QuestHaste_EventHandler.GOSSIP_SHOW()
+    if QuestHaste and QuestHaste.holdMode and not IsHoldKeyDown() then
+        ClearHoldLatch()
+    end
     local availFields = HAS_CAPI
         and {"title", "level", "trivial", "frequency", "repeatable", "legendary", "ignored"}
         or {"title", "level", "trivial", "repeatable"}
@@ -542,6 +579,9 @@ function QuestHaste_EventHandler.GOSSIP_SHOW()
 end
 
 function QuestHaste_EventHandler.QUEST_GREETING()
+    if QuestHaste and QuestHaste.holdMode and not IsHoldKeyDown() then
+        ClearHoldLatch()
+    end
     WipeArray(availableCache)
     WipeArray(activeCache)
     for k = 1, GetNumActiveQuests() do
@@ -728,7 +768,8 @@ function QuestHaste_EventHandler.ADDON_LOADED(name)
         EnsureDefaults()
         QuestHaste_RegisterEvents()
         QuestHaste_EventHandler:UnregisterEvent("ADDON_LOADED")
-        DEFAULT_CHAT_FRAME:AddMessage("|cffffff88QuestHaste|r loaded. See /qhaste usage")
+        local modeStr = QuestHaste.holdMode and ("Hold-" .. tostring(QuestHaste.holdKey)) or "Always-Repeat"
+        DEFAULT_CHAT_FRAME:AddMessage("|cffffff88QuestHaste|r loaded (" .. modeStr .. "). See /qhaste usage")
     end
 end
 
