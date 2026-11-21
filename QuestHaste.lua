@@ -17,6 +17,7 @@ local QuestHaste_HoldLatched = false
 local QuestHaste_HoldLatchTime = 0
 local QuestHaste_LastCompleteTitle = nil
 local QuestHaste_LastCompleteTime = 0
+local currentQuest = ""
 
 -- Reusable tables to avoid per-event allocations in GOSSIP_SHOW / QUEST_GREETING
 local availableCache = {}
@@ -84,9 +85,8 @@ local function EnsureDefaults()
     if QuestHaste.debugTrace == nil then
         QuestHaste.debugTrace = false
     end
-    if QuestHaste.currentQuest == nil then
-        QuestHaste.currentQuest = ""
-    end
+    QuestHaste.currentQuest = nil
+    currentQuest = ""
 end
 
 local function IsHoldKeyDown()
@@ -350,7 +350,7 @@ local function menuHandler(available, active, name, accept, complete)
     if ShouldAutoRepeatRun() then
         for k, v in ipairs(active) do
             if v.completed and QuestHaste_IsAutoRepeat(v.title) then
-                QuestHaste.currentQuest = v.title
+                currentQuest = v.title
                 local idx = k
                 ScheduleAction(function() complete(idx) end, "complete repeat active: " .. tostring(v.title))
                 return
@@ -358,7 +358,7 @@ local function menuHandler(available, active, name, accept, complete)
         end
         for k, v in ipairs(available) do
             if QuestHaste_IsAutoRepeat(v.title) then
-                QuestHaste.currentQuest = v.title
+                currentQuest = v.title
                 local idx = k
                 ScheduleAction(function() accept(idx) end, "accept repeat available: " .. tostring(v.title))
                 return
@@ -368,7 +368,7 @@ local function menuHandler(available, active, name, accept, complete)
         if QuestHaste.holdMode then
             for k, v in ipairs(active) do
                 if v.completed and QuestHaste_IsAutoComplete(v.title) then
-                    QuestHaste.currentQuest = v.title
+                    currentQuest = v.title
                     local idx = k
                     ScheduleAction(function() complete(idx) end, "hold-finish saved active: " .. tostring(v.title))
                     return
@@ -376,7 +376,7 @@ local function menuHandler(available, active, name, accept, complete)
             end
             for k, v in ipairs(available) do
                 if QuestHaste_IsAutoAccept(v.title) then
-                    QuestHaste.currentQuest = v.title
+                    currentQuest = v.title
                     local idx = k
                     ScheduleAction(function() accept(idx) end, "hold-accept saved available: " .. tostring(v.title))
                     return
@@ -389,7 +389,7 @@ local function menuHandler(available, active, name, accept, complete)
     if IsShiftKeyDown() and not QuestHaste.holdMode then
         for k, v in ipairs(active) do
             if v.completed then
-                QuestHaste.currentQuest = v.title
+                currentQuest = v.title
                 local idx = k
                 ScheduleAction(function() complete(idx) end, "shift complete active: " .. tostring(v.title))
                 return
@@ -398,7 +398,7 @@ local function menuHandler(available, active, name, accept, complete)
 
         for k, v in ipairs(available) do
             if QuestHaste_IsAutoAccept(v.title) or (v.repeatable and QuestHaste_IsAutoComplete(v.title)) then
-                QuestHaste.currentQuest = v.title
+                currentQuest = v.title
                 local idx = k
                 ScheduleAction(function() accept(idx) end, "shift accept saved: " .. tostring(v.title))
                 return
@@ -407,7 +407,7 @@ local function menuHandler(available, active, name, accept, complete)
 
         for k, v in ipairs(active) do
             if QuestHaste_IsAutoComplete(v.title) then
-                QuestHaste.currentQuest = v.title
+                currentQuest = v.title
                 local idx = k
                 ScheduleAction(function() complete(idx) end, "shift complete saved: " .. tostring(v.title))
                 return
@@ -415,12 +415,12 @@ local function menuHandler(available, active, name, accept, complete)
         end
 
         if available[1] then
-            QuestHaste.currentQuest = available[1].title
+            currentQuest = available[1].title
             ScheduleAction(function() accept(1) end, "shift accept first")
             return
         end
         if active[1] then
-            QuestHaste.currentQuest = active[1].title
+            currentQuest = active[1].title
             ScheduleAction(function() complete(1) end, "shift complete first")
             return
         end
@@ -676,20 +676,20 @@ function QuestHaste_EventHandler.QUEST_PROGRESS()
     local savedAllowed = QuestHaste_IsAutoComplete(title)
     local normalTrigger
     if QuestHaste.holdMode then
-        normalTrigger = (holdActive and (repeatAllowed or savedAllowed)) or (not QuestHaste_IsAutoRepeat(title) and savedAllowed)
+        normalTrigger = holdActive and (repeatAllowed or savedAllowed)
     else
-        normalTrigger = repeatAllowed or (QuestHaste.currentQuest == title) or (not savedAllowed ~= not (IsShiftKeyDown() and not holdKeyIsShift))
+        normalTrigger = repeatAllowed or (currentQuest == title) or (not savedAllowed ~= not (IsShiftKeyDown() and not holdKeyIsShift))
     end
 
-    if (normalTrigger or QuestHaste.currentQuest == title) and IsQuestCompletable() then
-        QuestHaste.currentQuest = title
+    if (normalTrigger or currentQuest == title) and IsQuestCompletable() then
+        currentQuest = title
         ScheduleAction(function()
             if QuestFrame and QuestFrame:IsShown() and IsQuestCompletable() then
                 CompleteQuest()
             end
         end, "CompleteQuest: " .. tostring(title))
     else
-        QuestHaste.currentQuest = ""
+        currentQuest = ""
     end
 end
 
@@ -726,12 +726,12 @@ function QuestHaste_EventHandler.QUEST_COMPLETE()
     local savedAllowed = QuestHaste_IsAutoComplete(title)
     local normalTrigger
     if QuestHaste.holdMode then
-        normalTrigger = (holdActive and (repeatAllowed or savedAllowed)) or (not QuestHaste_IsAutoRepeat(title) and savedAllowed)
+        normalTrigger = holdActive and (repeatAllowed or savedAllowed)
     else
-        normalTrigger = repeatAllowed or (QuestHaste.currentQuest == title) or (not savedAllowed ~= not (IsShiftKeyDown() and not holdKeyIsShift))
+        normalTrigger = repeatAllowed or (currentQuest == title) or (not savedAllowed ~= not (IsShiftKeyDown() and not holdKeyIsShift))
     end
 
-    if normalTrigger or QuestHaste.currentQuest == title then
+    if normalTrigger or currentQuest == title then
         local choiceIdx, ok, missingName = FindSavedRewardChoice(title)
         if not ok then
             if missingName then
@@ -739,7 +739,7 @@ function QuestHaste_EventHandler.QUEST_COMPLETE()
             else
                 TraceLog("QUEST_COMPLETE waiting for manual choice (no saved reward)")
             end
-            QuestHaste.currentQuest = ""
+            currentQuest = ""
             return
         end
 
@@ -759,13 +759,13 @@ function QuestHaste_EventHandler.QUEST_COMPLETE()
                     DEFAULT_CHAT_FRAME:AddMessage("|cffffff88QuestHaste|r: |cffffd700" .. capturedTitle .. "|r repeated (|cff00ff00x" .. QuestHaste_Session[capturedTitle] .. "|r this session).")
                 end
             end
-            QuestHaste.currentQuest = ""
+            currentQuest = ""
             if QuestHaste.holdMode and not IsHoldKeyDown() then
                 ClearHoldLatch()
             end
         end, "GetQuestReward(" .. tostring(capturedChoice) .. "): " .. tostring(capturedTitle))
     else
-        QuestHaste.currentQuest = ""
+        currentQuest = ""
     end
 end
 
@@ -792,19 +792,19 @@ function QuestHaste_EventHandler.QUEST_DETAIL()
     local savedAllowed = QuestHaste_IsAutoAccept(title)
     local normalTrigger
     if QuestHaste.holdMode then
-        normalTrigger = (holdActive and (repeatAllowed or savedAllowed)) or (not QuestHaste_IsAutoRepeat(title) and savedAllowed)
+        normalTrigger = holdActive and (repeatAllowed or savedAllowed)
     else
-        normalTrigger = repeatAllowed or (QuestHaste.currentQuest == title) or (not savedAllowed ~= not (IsShiftKeyDown() and not holdKeyIsShift))
+        normalTrigger = repeatAllowed or (currentQuest == title) or (not savedAllowed ~= not (IsShiftKeyDown() and not holdKeyIsShift))
     end
 
-    if normalTrigger or QuestHaste.currentQuest == title then
+    if normalTrigger or currentQuest == title then
         ScheduleAction(function()
             if QuestFrame and QuestFrame:IsShown() then
                 AcceptQuest()
             end
         end, "AcceptQuest: " .. tostring(title))
     else
-        QuestHaste.currentQuest = ""
+        currentQuest = ""
     end
 end
 
@@ -814,6 +814,7 @@ end
 
 function QuestHaste_EventHandler.GOSSIP_CLOSED()
     CancelPendingAction("GOSSIP_CLOSED")
+    currentQuest = ""
     if QuestHaste and QuestHaste.holdMode and not IsHoldKeyDown() then
         ClearHoldLatch()
     end
@@ -978,14 +979,14 @@ end
 
 function QuestHaste_Proceed()
     if GossipFrame:IsShown() then
-        QuestHaste.currentQuest = GetGossipActiveQuests()
+        currentQuest = GetGossipActiveQuests()
         SelectGossipActiveQuest(1)
     elseif QuestFrame:IsShown() then
         local title = GetTitleText()
         if QuestFrameAcceptButton:IsShown() then
             AcceptQuest()
         elseif QuestFrameCompleteButton:IsShown() and IsQuestCompletable() then
-            QuestHaste.currentQuest = title
+            currentQuest = title
             CompleteQuest()
         elseif QuestFrameCompleteQuestButton:IsShown() and IsQuestCompletable() then
             local choiceIdx, ok = FindSavedRewardChoice(title)
@@ -1096,6 +1097,9 @@ local function CommandParser(msg)
             DEFAULT_CHAT_FRAME:AddMessage(opts)
         end
     elseif command == "pause" then
+        CancelPendingAction("pause")
+        ClearHoldLatch()
+        currentQuest = ""
         DEFAULT_CHAT_FRAME:AddMessage("|cffffff88QuestHaste|r: |cffff0000paused|r.")
         QuestHaste_UnregisterEvents()
     elseif command == "resume" then
