@@ -572,38 +572,66 @@ function QuestHaste_EventHandler.GOSSIP_SHOW()
     if QuestHaste and QuestHaste.holdMode and not IsHoldKeyDown() then
         ClearHoldLatch()
     end
-    local numAvail = GetNumGossipAvailableQuests and GetNumGossipAvailableQuests() or nil
-    local numAct = GetNumGossipActiveQuests and GetNumGossipActiveQuests() or nil
-    local availRaw = PackArgs(GetGossipAvailableQuests())
-    local actRaw = PackArgs(GetGossipActiveQuests())
 
-    local availFields = HAS_CAPI
-        and {"title", "level", "trivial", "frequency", "repeatable", "legendary", "ignored"}
-        or {"title", "level", "trivial", "repeatable"}
-    local activeFields = HAS_CAPI
-        and {"title", "level", "trivial", "completed", "legendary", "ignored"}
-        or {"title", "level", "trivial", "completed"}
+    local available = availableCache
+    local active = activeCache
+    local availStride, actStride = 0, 0
 
-    if numAvail and numAvail > 0 and availRaw.n and availRaw.n > 0 then
-        local stride = math.floor(availRaw.n / numAvail)
-        if stride == 4 then
+    if C_GossipInfo and C_GossipInfo.GetAvailableQuests and C_GossipInfo.GetActiveQuests then
+        WipeArray(available)
+        WipeArray(active)
+        local cAvail = C_GossipInfo.GetAvailableQuests()
+        for i, q in ipairs(cAvail) do
+            available[i] = {title = q.title, level = q.questLevel, repeatable = true}
+        end
+        local cAct = C_GossipInfo.GetActiveQuests()
+        for i, q in ipairs(cAct) do
+            active[i] = {title = q.title, level = q.questLevel, completed = q.isComplete}
+        end
+        availStride = -1
+        actStride = -1
+    else
+        local numAvail = GetNumGossipAvailableQuests and GetNumGossipAvailableQuests() or nil
+        local numAct = GetNumGossipActiveQuests and GetNumGossipActiveQuests() or nil
+        local availRaw = PackArgs(GetGossipAvailableQuests())
+        local actRaw = PackArgs(GetGossipActiveQuests())
+
+        local availFields = {"title", "level", "trivial", "repeatable"}
+        local activeFields = {"title", "level", "completed"}
+
+        availStride = (numAvail and numAvail > 0 and availRaw.n and availRaw.n > 0) and math.floor(availRaw.n / numAvail) or 0
+        actStride = (numAct and numAct > 0 and actRaw.n and actRaw.n > 0) and math.floor(actRaw.n / numAct) or 0
+        if availStride == 2 then
+            availFields = {"title", "level"}
+        elseif availStride == 3 then
+            availFields = {"title", "level", "repeatable"}
+        elseif availStride == 4 then
             availFields = {"title", "level", "trivial", "repeatable"}
-        elseif stride == 7 then
+        elseif availStride == 7 then
             availFields = {"title", "level", "trivial", "frequency", "repeatable", "legendary", "ignored"}
         end
-    end
-    if numAct and numAct > 0 and actRaw.n and actRaw.n > 0 then
-        local stride = math.floor(actRaw.n / numAct)
-        if stride == 4 then
+        if actStride == 2 then
+            activeFields = {"title", "level"}
+        elseif actStride == 3 then
+            activeFields = {"title", "level", "completed"}
+        elseif actStride == 4 then
             activeFields = {"title", "level", "trivial", "completed"}
-        elseif stride == 6 then
+        elseif actStride == 6 then
             activeFields = {"title", "level", "trivial", "completed", "legendary", "ignored"}
         end
+
+        FillRecords(available, availFields, availRaw, numAvail)
+        FillRecords(active, activeFields, actRaw, numAct)
     end
 
-    local available = FillRecords(availableCache, availFields, availRaw, numAvail)
-    local active = FillRecords(activeCache, activeFields, actRaw, numAct)
-    TraceLog("GOSSIP_SHOW (avail=" .. table.getn(available) .. ", act=" .. table.getn(active) .. ", holdMode=" .. tostring(QuestHaste.holdMode) .. ", holdActive=" .. tostring(IsHoldActive()) .. ")")
+    TraceLog("GOSSIP_SHOW (avail=" .. table.getn(available) .. " s=" .. availStride .. ", act=" .. table.getn(active) .. " s=" .. actStride .. ", holdMode=" .. tostring(QuestHaste.holdMode) .. ", holdActive=" .. tostring(IsHoldActive()) .. ")")
+    if QuestHaste and QuestHaste.debugTrace then
+        for i, v in ipairs(active) do
+            if QuestHaste_IsAutoRepeat(v.title) then
+                TraceLog("  active[" .. i .. "] repeat=" .. tostring(v.title) .. " completed=" .. tostring(v.completed))
+            end
+        end
+    end
     menuHandler(available, active, "GossipTitleButton", SelectGossipAvailableQuest, SelectGossipActiveQuest)
 end
 
