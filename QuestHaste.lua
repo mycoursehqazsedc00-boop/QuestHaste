@@ -244,9 +244,9 @@ end
 local function ResolveButtonQuestTitle(btn, available, active)
     if not btn then return nil end
     local id = btn:GetID()
-    if btn.type == "Available" and id and available[id] and available[id].title then
+    if (btn.type == "Available" or btn.isActive == 0) and id and available[id] and available[id].title then
         return available[id].title
-    elseif btn.type == "Active" and id and active[id] and active[id].title then
+    elseif (btn.type == "Active" or btn.isActive == 1) and id and active[id] and active[id].title then
         return active[id].title
     end
     local raw = btn:GetText()
@@ -303,8 +303,16 @@ local function menuHandler(available, active, name, accept, complete)
                         TraceLog("Toggle repeat from list: " .. tostring(title))
                         if QuestHaste_IsAutoRepeat(title) then
                             QuestHaste_RemoveAutoRepeat(title)
+                            if QuestHaste_IsAutoAccept(title) or QuestHaste_IsAutoComplete(title) then
+                                btn.QHaste.background:SetGradientAlpha("HORIZONTAL", 0.5, 1, 0, 0.5, 1, 1, 0, 0)
+                                btn.QHaste.background:Show()
+                            else
+                                btn.QHaste.background:Hide()
+                            end
                         else
                             QuestHaste_AddAutoRepeat(title)
+                            btn.QHaste.background:SetGradientAlpha("HORIZONTAL", 1, 0.82, 0, 0.6, 1, 0.82, 0, 0)
+                            btn.QHaste.background:Show()
                         end
                     else
                         if btn.QHaste.oldScript then
@@ -437,8 +445,7 @@ local function RefreshRewardHighlights()
     for i = 1, 10 do
         local btn = getglobal("QuestRewardItem" .. i)
         if btn and btn.QHasteFrame then
-            local isChoice = (btn.type == nil or btn.type == "choice")
-            if isChoice and i <= numChoices and (savedName or savedId) then
+            if i <= numChoices and (savedName or savedId) then
                 local itemName = GetQuestItemInfo("choice", i)
                 local itemLink = GetQuestItemLink("choice", i)
                 local itemId = ExtractItemId(itemLink)
